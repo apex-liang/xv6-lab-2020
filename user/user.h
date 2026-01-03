@@ -23,6 +23,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+// int trace(int,char**)//system call num,0000 0000 0000 ... 0000 0010 1000 will trace 2^4(sys_wait)and 2^6(6 sys_kill), command(like exec)
 
 // ulib.c
 int stat(const char*, struct stat*);
