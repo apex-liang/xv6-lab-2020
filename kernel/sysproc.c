@@ -95,3 +95,21 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_trace(void)
+{
+  int n;
+  if(argint(0, &n) <0)
+  {
+    return -1;
+  }
+  if((n <0)||(n >2147483647))
+  {
+    printf("%d\n",n);
+    return -1;
+  }
+  printf("%d\n",n);  
+  myproc()->traceID = n;
+  return 0;
+}

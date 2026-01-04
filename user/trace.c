@@ -10,7 +10,7 @@ main(int argc, char *argv[])
   char *nargv[MAXARG];
 
   if(argc < 3 || (argv[1][0] < '0' || argv[1][0] > '9')){
-    fprintf(2, "Usage: %s mask command\n", argv[0]);
+    fprintf(2, "Usage: %s mask command\n", argv[0]);//input mask num wrong
     exit(1);
   }
 
@@ -23,5 +23,6 @@ main(int argc, char *argv[])
     nargv[i-2] = argv[i];
   }
   exec(nargv[0], nargv);
+  
   exit(0);
 }
