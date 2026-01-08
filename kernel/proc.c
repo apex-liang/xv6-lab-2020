@@ -126,7 +126,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  p->traceID=0;
   return p;
 }
 
@@ -274,7 +274,7 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-  np->traceID = p->traceID;
+  
   np->parent = p;
 
   // copy saved user registers.
@@ -294,7 +294,7 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
-
+  np->traceID = p->traceID;
   release(&np->lock);
 
   return pid;
@@ -692,4 +692,31 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64
+getnproc(void)
+{
+  uint64 res=0;
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    //acquire(&p->lock);
+    if(p->state == UNUSED)
+      continue;
+    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+      res++;
+    else
+      printf("error!Something wrong in getnproc in proc.c.");
+    //release(&p->lock);
+  }
+  // printf("getnproc OK!\n");
+  return res;
 }
