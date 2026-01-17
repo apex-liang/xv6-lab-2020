@@ -20,7 +20,7 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
-
+extern char etext[];  // kernel.ld sets this to end of kernel code.
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -38,10 +38,51 @@ procinit(void)
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      p->pa_kstack = pa;
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
   }
   kvminithart();
+}
+
+void
+procvminit(struct proc *p)
+{
+  p->prockernelpagetable = (pagetable_t) kalloc();
+
+
+  memset(p->prockernelpagetable, 0, PGSIZE);
+
+  // uart registers
+  procvmmap(p->prockernelpagetable,UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  procvmmap(p->prockernelpagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  // procvmmap(p->prockernelpagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  procvmmap(p->prockernelpagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  procvmmap(p->prockernelpagetable,KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  procvmmap(p->prockernelpagetable,(uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  procvmmap(p->prockernelpagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  
+  procvmmap(p->prockernelpagetable,p->kstack,(uint64)p->pa_kstack,PGSIZE,PTE_R | PTE_W);
+
+}
+void
+procvmmap(pagetable_t pagetable,uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(pagetable, va, sz, pa, perm) != 0)
+    panic("procvmmap");
 }
 
 // Must be called with interrupts disabled,
@@ -115,6 +156,7 @@ found:
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
+  procvminit(p);
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
@@ -141,6 +183,8 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->prockernelpagetable)
+    freeproc_kernelpage(p);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -151,6 +195,37 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 }
+
+void
+freeproc_kernelpage(struct proc *p)
+{
+    if(p->sz > 0)
+      uvmunmap(p->prockernelpagetable, 0, PGROUNDUP(p->sz)/PGSIZE, 0);
+    // uvmunmap(p->prockernelpagetable, p->kstack, 1, 0);
+    // uvmunmap(p->prockernelpagetable, UART0, 1, 0);
+    // uvmunmap(p->prockernelpagetable, VIRTIO0, 1, 0);
+    // // uvmunmap(p->prockernelpagetable, CLINT, 0x10000/PGSIZE, 0);
+    // uvmunmap(p->prockernelpagetable, PLIC, 0x400000/PGSIZE, 0);
+    // // uint64 va, last;
+    // // 第一段：代码段卸载
+    // // va = KERNBASE;
+    // // last = PGROUNDDOWN(va + (uint64)etext - KERNBASE - 1);
+    // // uvmunmap(p->prockernelpagetable, va, (last - va) / PGSIZE + 1, 0);
+    // // 第二段：数据段卸载
+    // // va = PGROUNDDOWN((uint64)etext); // 关键：数据段是从对齐后的 etext 开始的
+    // // last = PGROUNDDOWN(va + (PHYSTOP - (uint64)etext) - 1);
+    // // uvmunmap(p->prockernelpagetable, va, (last - va) / PGSIZE + 1, 0); 
+    
+    
+    // // safe_uvmunmap(p->prockernelpagetable, KERNBASE, (PGROUNDDOWN((uint64)etext)-KERNBASE)/PGSIZE, 0);
+    // // safe_uvmunmap(p->prockernelpagetable, (uint64)etext, (PHYSTOP-PGROUNDDOWN((uint64)etext))/PGSIZE, 0);
+    
+    // uvmunmap(p->prockernelpagetable, KERNBASE, (PHYSTOP - KERNBASE) / PGSIZE, 0);
+    // uvmunmap(p->prockernelpagetable, TRAMPOLINE, 1, 0);
+    freewalk_prockernelpagetable(p->prockernelpagetable);
+    p->prockernelpagetable = 0;
+}
+
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
@@ -207,6 +282,8 @@ uchar initcode[] = {
   0x00, 0x00, 0x00, 0x00
 };
 
+
+
 // Set up first user process.
 void
 userinit(void)
@@ -229,7 +306,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
+  u2ukcopy(p->pagetable,p->prockernelpagetable,0,p->sz);
   release(&p->lock);
 }
 
@@ -243,12 +320,28 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if( ((sz+n) >= PLIC) ||( (sz+n) < sz))
+    {
+      // panic("growproc error!uaddr bigger than PLIC");
+      return -1;
+    } 
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+      return -1;
+    }
+    //grow success
+    uint64 u2ukre=0;
+    if((u2ukre=u2ukcopy(p->pagetable,p->prockernelpagetable,p->sz,sz)) < 0)
+    {
+      uvmdealloc(p->pagetable, sz, p->sz);
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    if(PGROUNDUP(p->sz) > PGROUNDUP(sz))
+      uvmunmap(p->prockernelpagetable, PGROUNDUP(sz), (PGROUNDUP(p->sz) - PGROUNDUP(sz)) / PGSIZE, 0);
+    // u2ukcopy(p->pagetable,p->prockernelpagetable,sz+n,n);
   }
+
   p->sz = sz;
   return 0;
 }
@@ -268,13 +361,19 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0 ){
     freeproc(np);
     release(&np->lock);
     return -1;
   }
+
   np->sz = p->sz;
 
+  if(u2ukcopy(np->pagetable, np->prockernelpagetable, 0, np->sz) < 0){
+        freeproc(np);
+        release(&np->lock);
+        return -1;
+  }
   np->parent = p;
 
   // copy saved user registers.
@@ -473,8 +572,10 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        w_satp(MAKE_SATP(p->prockernelpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
-
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;

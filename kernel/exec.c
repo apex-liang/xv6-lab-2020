@@ -110,11 +110,30 @@ exec(char *path, char **argv)
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
+  pagetable_t oldprockernelpagetable = p->prockernelpagetable;
+  if(oldsz>0)
+    uvmunmap(oldprockernelpagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  if(sz >= PLIC) {
+    printf("exec: sz larger than PLIC!\n");
+    goto bad;
+  }
+  if(u2ukcopy(pagetable,p->prockernelpagetable,0,sz) < 0){
+    printf("exec: u2ukcopy failed!\n");
+    goto bad;
+  }
   p->pagetable = pagetable;
   p->sz = sz;
+  // if(u2ukcopy(p->pagetable,p->prockernelpagetable,0,sz) < 0){
+  //   printf("exec: u2ukcopy failed!\n");
+  //   goto bad;
+  // }
+    
+  
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+  
+  if(p->pid==1) vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
