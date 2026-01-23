@@ -43,12 +43,23 @@ sys_sbrk(void)
 {
   int addr;
   int n;
-
+  // uint64 sz;
   if(argint(0, &n) < 0)
     return -1;
+  // sz=myproc()->sz;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  if(n < 0){
+    if(uvmdealloc(myproc()->pagetable, addr, addr + n) == 0)
+      return -1;
+    myproc()->sz = addr+n;
+  }
+  else{
+    myproc()->sz = myproc()->sz + n;
+  }
+  
+  // if(growproc(n) < 0)
+  //   return -1;
+
   return addr;
 }
 
