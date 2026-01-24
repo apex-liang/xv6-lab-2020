@@ -5,7 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -352,12 +353,66 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
 int
+traphandle_copy(pagetable_t pagetable,uint64 va)
+{
+  struct proc* p=myproc();
+  if(va >= p->sz ) // 简单校验
+      return -1;
+  uint64 va_down = PGROUNDDOWN(va);
+  pte_t* pte=walk(pagetable,va_down,0);
+  if(pte == 0 || !(*pte & PTE_V) || !(*pte & PTE_U))
+    return -1;
+  if(*pte!=0 && (*pte & PTE_V) && (*pte & PTE_U))
+  {
+    uint64 pa_trap=PTE2PA(*pte);
+    if((*pte&PTE_C))
+    {
+      if(check_memlist_cite(pa_trap)>1)
+      {
+        char* mem;
+        mem = kalloc();
+        if(mem == 0){
+          // printf("There is no mem in traps!\n");
+          return -1;
+        }
+        else{
+          uint flags=PTE_FLAGS(*pte)&(~PTE_C);
+          flags = flags|PTE_W;
+          memmove(mem, (char*)pa_trap, PGSIZE);
+          *pte = PA2PTE(mem) | flags;
+          kfree((void*)pa_trap);
+        }
+      }
+      else if(check_memlist_cite(pa_trap)==1)
+      {
+        *pte=*pte&(~PTE_C);
+        *pte=*pte|PTE_W;
+      }
+    }
+  }
+  return 0;
+}
+int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
+  pte_t* pte;
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    // pa0 = walkaddr(pagetable, va0);
+    // if(pa0==0)
+    // {
+    //   if(traphandle_copy(pagetable,va0)==0)
+    //     pa0=walkaddr(pagetable, va0);
+    // }
+    if(va0>MAXVA) return -1;
+    pte = walk(pagetable, va0, 0);
+    if(pte == 0 || !(*pte & PTE_V)) return -1;
+
+    if(*pte & PTE_C){
+      if(traphandle_copy(pagetable, va0) != 0)
+        return -1;
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

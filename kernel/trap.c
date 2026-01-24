@@ -68,9 +68,47 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    // if(r_)
+    if(r_scause()==13||r_scause()==15)
+    {
+      uint64 va=r_stval();
+      if(traphandle_copy(p->pagetable,va)==0)
+        sfence_vma();
+      else 
+        p->killed=1;
+      // if(va >= p->sz || va % PGSIZE != 0) // 简单校验
+      //   p->killed = 1;
+      // pte_t* pte=walk(p->pagetable,va,0);
+      // if(*pte!=0 && (*pte & PTE_V) && (*pte & PTE_U))
+      // {
+      //   uint64 pa_trap=PTE2PA(*pte);
+      //   if((*pte&PTE_C)==1&&check_memlist_cite(pa_trap)>1)
+      //   {
+      //     char* mem;
+      //     mem = kalloc();
+      //     if(mem == 0){
+      //       printf("There is no mem in traps!\n");
+      //       p->kill= 1;
+      //     }
+      //     else{
+      //       uint flags=PTE_FLAGS(*pte)&(~PTE_C)|PTE_W;
+      //       memmove(mem, (char*)pa_trap, PGSIZE);
+      //       *pte = PA2PTE(mem) | flags;
+      //       kfree((void*)pa);
+      //     }
+      //   }
+      //   else if(*pte&PTE_C==1&&check_memlist_cite(pa_trap)==1)
+      //   {
+      //     *pte=*pte&(~PTE_C);
+      //   }
+      // }
+    }
+    else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
+    
   }
 
   if(p->killed)

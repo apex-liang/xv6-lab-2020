@@ -252,7 +252,42 @@ growproc(int n)
   p->sz = sz;
   return 0;
 }
+int
+uvmcopy_fork(pagetable_t old, pagetable_t new, uint64 sz)
+{
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
 
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+    // flags = PTE_FLAGS(*pte);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(*pte&PTE_V)
+    {
+      *pte&=~PTE_W;
+      *pte|=PTE_C;
+    }
+    flags = PTE_FLAGS(*pte)&(~PTE_W);
+    // *pte = PA2PTE(pa) | flags | PTE_V;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      // kfree(mem);
+      goto err;
+    }
+    add_memlist_cite(pa);
+  }
+  return 0;
+
+ err:
+  uvmunmap(new, 0, i / PGSIZE, 1);
+  return -1;
+}
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
 int
@@ -268,11 +303,12 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if(uvmcopy_fork(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
   }
+
   np->sz = p->sz;
 
   np->parent = p;
@@ -299,6 +335,7 @@ fork(void)
 
   return pid;
 }
+
 
 // Pass p's abandoned children to init.
 // Caller must hold p->lock.
