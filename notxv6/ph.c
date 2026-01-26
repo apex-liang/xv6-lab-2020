@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 
-#define NBUCKET 5
+#define NBUCKET 17
 #define NKEYS 100000
 
 struct entry {
@@ -16,7 +16,8 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
-
+pthread_mutex_t lock[NBUCKET];
+// pthread_mutex_t lock;
 double
 now()
 {
@@ -34,13 +35,42 @@ insert(int key, int value, struct entry **p, struct entry *n)
   e->next = n;
   *p = e;
 }
+/*
+This is the error version.
+func put() might put the same key in a table for twice or more.
 
+*/
+// static 
+// void put(int key, int value)
+// {
+//   int i = key % NBUCKET;
+  
+//   // is the key already present?
+//   struct entry *e = 0;
+//   for (e = table[i]; e != 0; e = e->next) {
+//     if (e->key == key)
+//       break;
+//   }
+//   if(e){
+//     // update the existing key.
+//     // pthread_mutex_lock(&lock);
+//     e->value = value;
+//     // pthread_mutex_unlock(&lock);
+//   } else {
+//     // the new is new.
+//     pthread_mutex_lock(&lock);
+//     insert(key, value, &table[i], table[i]);
+//     pthread_mutex_unlock(&lock);
+//   }
+  
+// }
 static 
 void put(int key, int value)
 {
   int i = key % NBUCKET;
-
+  
   // is the key already present?
+  pthread_mutex_lock(&lock[i]);
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
@@ -52,9 +82,15 @@ void put(int key, int value)
   } else {
     // the new is new.
     insert(key, value, &table[i], table[i]);
+    
   }
+  pthread_mutex_unlock(&lock[i]);
 }
-
+/*
+  This version might right 
+  Because this test regulate the table will be put first and get sooner.
+  They are two disparent process.
+*/
 static struct entry*
 get(int key)
 {
@@ -62,10 +98,16 @@ get(int key)
 
 
   struct entry *e = 0;
+  // pthread_mutex_lock(&lock);
   for (e = table[i]; e != 0; e = e->next) {
-    if (e->key == key) break;
+    
+    if (e->key == key) {
+      
+      break;
+    }
+    
   }
-
+  // pthread_mutex_unlock(&lock);
   return e;
 }
 
@@ -102,10 +144,14 @@ main(int argc, char *argv[])
   pthread_t *tha;
   void *value;
   double t1, t0;
-
+  // pthread_mutex_init(&lock, NULL);
   if (argc < 2) {
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
     exit(-1);
+  }
+  for(int i=0;i<NBUCKET;i++)
+  {
+    pthread_mutex_init(&lock[i], NULL);
   }
   nthread = atoi(argv[1]);
   tha = malloc(sizeof(pthread_t) * nthread);
