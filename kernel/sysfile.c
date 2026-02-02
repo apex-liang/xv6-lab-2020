@@ -291,12 +291,13 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
-
+  int len=0;
+  int depth = 0;
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
 
   begin_op();
-
+  char target[MAXPATH];
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -309,13 +310,88 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+
+    
+    while(ip->type == T_SYMLINK && !(omode&O_NOFOLLOW))
+    {
+      // printf("DEBUG: pid %d, depth %d, type %d\n", myproc()->pid, depth, ip->type);
+      if(depth>=10){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      if((len=readi(ip, 0, (uint64)target, 0, MAXPATH-1)) <= 0 || len>=MAXPATH)
+      {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlockput(ip);
+      target[len]='\0';
+      if((ip = namei(target)) == 0){
+        end_op();
+        // printf("DEBUG: namei failed\n");
+        return -1;
+      }
+
+      // printf("DEBUG: namei got inum %d\n", ip->inum);
+      ilock(ip);
+      depth++;
+    }
+
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
       return -1;
     }
+
   }
 
+  // if(omode & O_CREATE){
+  //   ip = create(path, T_FILE, 0, 0);
+  //   if(ip == 0){
+  //     end_op();
+  //     return -1;
+  //   }
+  // } else {
+  //   while(1){
+  //     if((ip = namei(path)) == 0){
+  //       end_op();
+  //       return -1;
+  //     }
+  //     ilock(ip);
+  //     if(ip->type == T_SYMLINK && ((omode&O_NOFOLLOW)==0))
+  //     {
+  //       // printf("DEBUG: pid %d, depth %d, type %d\n", myproc()->pid, depth, ip->type);
+  //       if(++depth>10){
+  //         iunlockput(ip);
+  //         end_op();
+  //         return -1;
+  //       }
+  //       if((len=readi(ip, 0, (uint64)path, 0, MAXPATH)) <= 0)
+  //       {
+  //         iunlockput(ip);
+  //         end_op();
+  //         return -1;
+  //       }
+  //       iunlockput(ip);
+        
+  //     }
+  //     else 
+  //       break;
+  //   }
+    
+
+
+
+    // if(ip->type == T_DIR && omode != O_RDONLY){
+    //   iunlockput(ip);
+    //   end_op();
+    //   return -1;
+    // }
+
+  // }
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
     end_op();
@@ -482,5 +558,31 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char new[MAXPATH], old[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  ip = create(new,T_SYMLINK,0,0);
+  if(ip==0){
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip,0,(uint64)old,0,strlen(old)+1)!=(strlen(old)+1)){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  iunlockput(ip);
+  end_op();
   return 0;
 }
