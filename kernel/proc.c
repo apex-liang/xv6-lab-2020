@@ -5,7 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -113,7 +116,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
+  p->maphigh = MAXVA-3*PGSIZE;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
@@ -133,7 +136,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  for(int i=0;i<VMASIZE;i++){
+    p->VMAS[i].used=0;
+  }
   return p;
 }
 
@@ -157,6 +162,15 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  for(int i = 0; i < VMASIZE; i++){
+    if(p->VMAS[i].used){
+      if(p->VMAS[i].opfile) {
+        fileclose(p->VMAS[i].opfile); 
+      }
+      p->VMAS[i].used = 0;
+    }
+  }
 }
 
 // Create a user page table for a given process,
@@ -280,6 +294,13 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  for(int i=0;i<VMASIZE;i++){
+    
+    if(p->VMAS[i].used){
+      np->VMAS[i]=p->VMAS[i];
+      filedup(p->VMAS[i].opfile);
+    }
+  }
   np->sz = p->sz;
 
   np->parent = p;
@@ -353,6 +374,36 @@ exit(int status)
     }
   }
 
+  for(int i=0;i<VMASIZE;i++){
+    struct file *f;
+    if(p->VMAS[i].used){
+      struct vma *v=&(p->VMAS[i]);
+      uint64 addr=v->va_start;
+      int len=v->len;
+      if((v->flags & MAP_SHARED) && (v->prot & PROT_WRITE)){
+        uint64 cur=addr;
+        f=v->opfile;
+        while(cur<addr+len){
+          pte_t* pte=walk(p->pagetable,cur,0);
+          if(pte&&(*pte&PTE_V)&&(*pte&PTE_D)){
+            uint64 file_off=cur-v->va_start;
+            begin_op();
+            ilock(f->ip);
+            writei(f->ip, 1, cur, file_off, PGSIZE);
+            iunlock(f->ip);
+            end_op();
+            *pte &= ~PTE_D;
+          }
+          cur+=PGSIZE;
+        }
+        
+      }
+      int npg = (v->len + PGSIZE - 1) / PGSIZE;
+      uvmunmap(p->pagetable, v->va_start, npg, 1);
+      fileclose(v->opfile);
+      v->used=0;
+    }
+  }
   begin_op();
   iput(p->cwd);
   end_op();
