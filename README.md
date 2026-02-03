@@ -6,9 +6,9 @@
 - [x] Lab: System calls
 - [x] Lab: Page tables
 - [x] Lab: Traps
-- [x] Lab: Copy-on-Write fork
+- [x] Lab: Lazy
+- [x] Lab: Copy-on-Write
 - [x] Lab: Multithreading
-- [x] Lab: Network driver
 - [x] Lab: Locks
 - [x] Lab: File system
 - [x] Lab: Mmap
