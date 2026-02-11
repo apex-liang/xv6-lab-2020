@@ -17,6 +17,7 @@ main(int argc, char *argv[])
   		fprintf(1,"%d: received ping\n",getpid());
 	write(p_child[1],"B",1);
   	close(p_child[1]);
+	close(p_parent[0]);
   }else
   {
 	close(p_parent[0]);
@@ -26,6 +27,8 @@ main(int argc, char *argv[])
   		fprintf(1,"%d: received pong\n",getpid());
   		
   	close(p_parent[1]);
+	close(p_child[0]);
+	wait(0);
   }
   exit(0);
 }

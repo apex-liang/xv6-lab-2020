@@ -27,7 +27,8 @@ void get_prime(int *p)
         exit(0);
     }
     else{
-        while(read(p[0],buf,1))
+        close(p_child[0]);
+        while(read(p[0],buf,4))
         {
             if(buf[0]%primeout!=0)
                 write(p_child[1],buf,4);
@@ -44,9 +45,19 @@ int main(int argc, char *argv[])
      
         int p_parent[2];
         pipe(p_parent);
-        for(int i=2;i<=prime_max_tmp;i++)
-            write(p_parent[1],&i,4);
-        get_prime(p_parent);
-        wait(0);
-        exit(0);
+        if(fork()==0)
+        {
+            get_prime(p_parent);
+            exit(0);
+        }
+        else
+        {
+            close(p_parent[0]);
+            for(int i=2;i<=prime_max_tmp;i++)
+                write(p_parent[1],&i,4);
+            close(p_parent[1]);
+            wait(0);
+            exit(0);
+        }
+        
 }
