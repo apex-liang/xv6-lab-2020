@@ -34,13 +34,13 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      p->pa_kstack = pa;
-      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // p->pa_kstack = pa;
+      // // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
   kvminithart();
 }
@@ -74,7 +74,7 @@ procvminit(struct proc *p)
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   procvmmap(p->prockernelpagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-  
+  // printf("Mapping kstack: va=%p, pa=%p\n", p->kstack, p->pa_kstack);
   procvmmap(p->prockernelpagetable,p->kstack,(uint64)p->pa_kstack,PGSIZE,PTE_R | PTE_W);
 
 }
@@ -153,7 +153,20 @@ found:
     release(&p->lock);
     return 0;
   }
-
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+  {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  uint64 va = KSTACK((uint64) (0));
+  
+  p->pa_kstack = pa;
+  p->kstack = va;
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   procvminit(p);
@@ -162,7 +175,7 @@ found:
     release(&p->lock);
     return 0;
   }
-
+  
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -183,6 +196,12 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->pa_kstack){
+    // uvmunmap(p->prockernelpagetable, p->kstack, 1, 1);
+    kfree((void*)p->pa_kstack);
+    p->pa_kstack = 0;
+    p->kstack = 0;
+  }
   if(p->prockernelpagetable)
     freeproc_kernelpage(p);
   p->pagetable = 0;
@@ -193,14 +212,17 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+
   p->state = UNUSED;
 }
 
 void
 freeproc_kernelpage(struct proc *p)
 {
-    if(p->sz > 0)
-      uvmunmap(p->prockernelpagetable, 0, PGROUNDUP(p->sz)/PGSIZE, 0);
+    // if(p->sz > 0)
+    //   uvmunmap(p->prockernelpagetable, 0, PGROUNDUP(p->sz)/PGSIZE, 0);
+
+    // sfence_vma();
     // uvmunmap(p->prockernelpagetable, p->kstack, 1, 0);
     // uvmunmap(p->prockernelpagetable, UART0, 1, 0);
     // uvmunmap(p->prockernelpagetable, VIRTIO0, 1, 0);

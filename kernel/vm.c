@@ -192,7 +192,12 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
     if(*pte & PTE_V)
+    {
+      printf("Conflicting VA: %p, New PA: %p, Old PA: %p\n", va, pa, PTE2PA(*pte));
+      printf("panic: remap va=%p pte=%p\n", va, *pte);
       panic("remap");
+    }
+      
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
