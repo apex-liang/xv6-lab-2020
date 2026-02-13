@@ -16,7 +16,7 @@
 由于实验要求在不同的分支上进行开发，你可以通过切换分支查看每个实验的具体实现：
 - `git checkout util` : 查看uitls实验，用于熟悉操作系统
 - `git checkout syscall` : 查看系统调用实验，包含两个实验：实现一个追踪系统调用的trace系统调用、实现一个用于获取空闲内存量的sysinfo函数
-- `git checkout pgtbl` : 查看页表实验，包含：页表打印、内核的进程页表实现
+- `git checkout pgtbl` : 查看页表实验，包含：页表打印、进程的内核页表实现
 - `git checkout traps` : 查看中断处理实验，包含：回溯实验、时钟实验
 - `git checkout lazy` : 查看懒加载实现
 - `git checkout cow` : 查看写时复制实现
