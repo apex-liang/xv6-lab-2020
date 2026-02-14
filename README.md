@@ -24,7 +24,7 @@
 - `git checkout Locks` : 查看锁实现，包含修改kmem锁的粒度以减少锁争用、采用哈希桶锁优化buffer cache锁提高性能
 - `git checkout fs` : 查看文件系统实验，包含修改文件Inode结构使文件系统支持大文件存储、实现符号链接
 - `git checkout mmap` : 查看内存映射文件实现
-## 🛠 运行环境
+## [![Visitor Stats](https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png)](https://info.flagcounter.com/8Y1H)运行环境
 - **OS**: Ubuntu 20.04 / 22.04 
 - **Compiler**: riscv64-unknown-elf-gcc
 - **Emulator**: QEMU 5.0+
